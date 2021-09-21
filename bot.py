@@ -1,11 +1,13 @@
+from apiclient.discovery import build
 import asyncio
 import discord
 from discord.ext import commands,tasks
-import os
+from discord.utils import get
 from dotenv import load_dotenv
-import youtube_dl
-from apiclient.discovery import build
 import html
+import os
+import time
+import youtube_dl
 
 load_dotenv()
 
@@ -38,21 +40,21 @@ ffmpeg_options = {
 
 ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
 
+vc = None
+nowp = None
 query = []
-songs = asyncio.Queue()
-play_next_song = asyncio.Event()
 
-async def audio_player_task():
-    while True:
-        play_next_song.clear()
-        current = await songs.get()
-        current.start()
-        await play_next_song.wait()
-
-# def toggle_next():
-#     bot.loop.call_soon_threadsafe(play_next_song.get)
+def tes(e):
+    print('song finished')
+    print(vc)
+    if len(query) > 0:
+        time.sleep(3)
+        src = query.pop[0]
+        vc.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=src['filename']), after=tes)
+        #await gCtx.send('**Now playing:** {}'.format(src['title'])) 
 
 class YTDLSource(discord.PCMVolumeTransformer):
+
     def __init__(self, source, *, data, volume=0.5):
         super().__init__(source, volume)
         self.data = data
@@ -85,8 +87,39 @@ async def leave(ctx):
     else:
         await ctx.send("Bot is not connected to a voice channel.")
 
+# @bot.command(name='tes', help='tes')
+# async def test(ctx):
+#     print(ctx.voice_client)
+#     if(ctx.voice_client == None):
+#         channel = ctx.message.author.voice.channel
+#         await channel.connect()
+
+@bot.command(name='q', help='menampilkan query')
+async def q(ctx):
+    global query
+    msg = '**Current query**: \n'
+    co = 1
+    for q in query:
+        msg += str(co) + '. ' + q['title'] + '\n'
+    await ctx.send(msg)
+
+@bot.command(pass_context=True)
+async def queue(ctx):
+    await q.invoke(ctx)
+
+@bot.command(name='np', help='Sekarang lagu apa')
+async def nowPlaying(ctx):
+    global vc, nowp
+    if vc.is_playing():
+        await ctx.send('**Now playing:** {}'.format(nowp))
+    else:
+        await ctx.send('Bot is not playing anything')
+
 @bot.command(name='search', help='Cari lagu terus pilih')
 async def search(ctx, *, content):
+
+    global vc, nowp, query
+
     request = youtube.search().list(q=content,part='snippet',type='video',maxResults=10)
     res = request.execute()
     msg = ''
@@ -97,74 +130,124 @@ async def search(ctx, *, content):
             'title': html.unescape(item['snippet']['title']),
             'video_id': item['id']['videoId']
         }
-        print(qData)
         tmp_arr.append(qData)
         msg += str(co) + '. ' + qData['title'] + '\n\n'
         co += 1
     await ctx.send(msg)
     msg = await bot.wait_for('message', check=lambda message: message.author == ctx.author)
-    # print(msg.content)
-    # print(tmp_arr[int(msg.content)-1]['title'])
     selected = tmp_arr[int(msg.content)-1]
 
     if not ctx.message.author.voice:
         await ctx.send("{} is not connected to a voice channel".format(ctx.message.author.name))
         return
     else:
-        channel = ctx.message.author.voice.channel
-        try :
-            await channel.connect()
-            
-        except:
-            server = ctx.message.guild
-            voice_channel = server.voice_client
+        voice_client = ctx.message.guild.voice_client
+        if(voice_client == None):
+                channel = ctx.message.author.voice.channel
+                await channel.connect()
+        server = ctx.message.guild
 
     voice_client = ctx.message.guild.voice_client
 
     if voice_client.is_playing():
+        print(voice_client.is_playing())
         url = 'www.youtube.com/watch?v='+selected['video_id']
         filename = await YTDLSource.from_url(url, loop=bot.loop)
-        await songs.put(filename)
+        qData = {
+            'title': selected['title'],
+            'filename': filename
+        }
+        query.append(qData)
+        await ctx.send('**Added to Queue:** {}'.format(selected['title'])) 
     else:
+        print(voice_client.is_playing())
         server = ctx.message.guild
-        voice_channel = server.voice_client
-
+        vc = server.voice_client
         async with ctx.typing():
             url = 'www.youtube.com/watch?v='+selected['video_id']
             filename = await YTDLSource.from_url(url, loop=bot.loop)
-            await songs.put(voice_channel.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename)))
-        await ctx.send('**Now playing:** {}'.format(selected['title']))
-    
+            nowp = selected['title']
+            vc.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename), after=tes)
+        await ctx.send('**Now playing:** {}'.format(selected['title'])) 
 
 @bot.command(name='play', help='Muter lagu')
 async def play(ctx,url):
-    try:
-        server = ctx.message.guild
-        voice_channel = server.voice_client
 
+    global vc, nowp, query
+
+    if not ctx.message.author.voice:
+        await ctx.send("{} is not connected to a voice channel".format(ctx.message.author.name))
+        return
+    else:
+        voice_client = ctx.message.guild.voice_client
+        if(voice_client == None):
+                channel = ctx.message.author.voice.channel
+                await channel.connect()
+        server = ctx.message.guild
+
+    voice_client = ctx.message.guild.voice_client
+
+    if voice_client.is_playing():
+        print(voice_client.is_playing())
+        filename = await YTDLSource.from_url(url, loop=bot.loop)
+        qData = {
+            'title': filename,
+            'filename': filename
+        }
+        query.append(qData)
+        await ctx.send('**Added to Queue:** {}'.format(filename)) 
+    else:
+        print(voice_client.is_playing())
+        server = ctx.message.guild
+        vc = server.voice_client
         async with ctx.typing():
             filename = await YTDLSource.from_url(url, loop=bot.loop)
-            voice_channel.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename))
-        await ctx.send('**Now playing:** {}'.format(filename))
-    except:
-        await ctx.send("Bot is not connected to a voice channel")
+            nowp = filename
+            vc.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename), after=tes)
+        await ctx.send('**Now playing:** {}'.format(filename)) 
+
+    # try:
+    #     server = ctx.message.guild
+    #     voice_channel = server.voice_client
+
+    #     async with ctx.typing():
+    #         filename = await YTDLSource.from_url(url, loop=bot.loop)
+    #         voice_channel.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename))
+    #     await ctx.send('**Now playing:** {}'.format(filename))
+    # except:
+    #     await ctx.send("Bot is not connected to a voice channel")
 
 @bot.command(name='pause', help='Berhenti sementara')
 async def pause(ctx):
-    voice_client = ctx.message.guild.voice_client
-    if voice_client.is_paused():
-        await voice_client.resume()
-    else:
-        await ctx.send("Bot was not playing anything before this. Use play command")
+    global vc
+    try:
+        if vc.is_playing():
+            await vc.pause()
+        else:
+            await ctx.send("Bot is not playing anything")
+    except:
+        await ctx.send("Bot is not connected to a voice channel")
+
+@bot.command(name='resume', help='Melanjutkan putar')
+async def resume(ctx):
+    global vc
+    try:
+        if vc.is_paused():
+            await vc.resume()
+        else:
+            await ctx.send("Bot is not playing anything")
+    except:
+        await ctx.send("Bot is not connected to a voice channel")
 
 @bot.command(name='stop', help='Menghentikan lagu')
 async def stop(ctx):
-    voice_client = ctx.message.guild.voice_client
-    if voice_client.is_playing():
-        await voice_client.stop()
+
+    global vc
+
+    if vc.is_playing():
+        await vc.stop()
     else:
         await ctx.send("Bot is not playing anything at the moment.")
 
 if __name__ == "__main__" :
-    bot.loop.create_task(audio_player_task())
     bot.run(DISCORD_TOKEN)
