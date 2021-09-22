@@ -1,8 +1,7 @@
 from apiclient.discovery import build
 import asyncio
 import discord
-from discord.ext import commands,tasks
-from discord.utils import get
+from discord.ext import commands
 from dotenv import load_dotenv
 import html
 import os
@@ -11,11 +10,15 @@ import youtube_dl
 
 load_dotenv()
 
-DISCORD_TOKEN = os.getenv('discord_token')
 API_KEY = os.getenv('api_key')
+DISCORD_TOKEN = os.getenv('discord_token')
+
+vc = None
+nowp = None
+loop = False
+song_queue = []
 
 activity = discord.Activity(type=discord.ActivityType.watching, name="Indahnya negeriku Indonesia")
-
 intents = discord.Intents().all()
 client = discord.Client(intents=intents)
 bot = commands.Bot(command_prefix='!', intents=intents, activity=activity, status=discord.Status.idle)
@@ -33,7 +36,7 @@ ytdl_format_options = {
     'quite': True,
     'no_warnings': True,
     'default_search': 'auto',
-    'source_address': '0.0.0.0'
+    'source_address': '0.0.0.0',
 }
 
 ffmpeg_options = {
@@ -41,16 +44,6 @@ ffmpeg_options = {
 }
 
 ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
-
-vc = None
-nowp = None
-song_queue = []
-
-def tes(e):
-    if len(song_queue) > 0:
-        time.sleep(3)
-        src = song_queue.pop(0)
-        vc.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=src['filename']), after=tes)
 
 class YTDLSource(discord.PCMVolumeTransformer):
 
@@ -69,6 +62,14 @@ class YTDLSource(discord.PCMVolumeTransformer):
         filename = data['title'] if stream else ytdl.prepare_filename(data)
         return filename
 
+def next_song(e):
+    global nowp
+    if len(song_queue) > 0:
+        time.sleep(3)
+        src = song_queue.pop(0)
+        nowp = src['title']
+        vc.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=src['filename']), after=next_song)
+
 @bot.command(name='join', help='Supaya bot join ke voice channel')
 async def join(ctx):
     if not ctx.message.author.voice:
@@ -85,6 +86,14 @@ async def leave(ctx):
         await voice_client.disconnect()
     else:
         await ctx.send("Bot is not connected to a voice channel.")
+
+@bot.command(name='np', help='Sekarang lagu apa')
+async def nowPlaying(ctx):
+    global vc, nowp
+    if vc.is_playing():
+        await ctx.send('**Now playing:** {}'.format(nowp))
+    else:
+        await ctx.send('Bot is not playing anything.')
 
 @bot.command(name='q', help='menampilkan song_queue')
 async def q(ctx):
@@ -104,13 +113,16 @@ async def q(ctx):
 async def qalt(ctx):
     await q.invoke(ctx)
 
-@bot.command(name='np', help='Sekarang lagu apa')
-async def nowPlaying(ctx):
-    global vc, nowp
-    if vc.is_playing():
-        await ctx.send('**Now playing:** {}'.format(nowp))
-    else:
-        await ctx.send('Bot is not playing anything.')
+# @bot.command(name='tes', help='tes')
+# async def tes(ctx, *, content):
+#     request = youtube.search().list(q=content,part='snippet',type='video',maxResults=1)
+#     res = request.execute()
+#     video_id = res['items'][0]['id']['videoId']
+#     url = 'www.youtube.com/watch?v='+video_id
+#     filename = await YTDLSource.from_url(url, loop=bot.loop)
+#     print(filename)
+#     #print(res['items'][0]['snippet']['thumbnails']['default']['url'])
+#     #await ctx.send(res['items'][0]['snippet']['thumbnails']['default']['url'])
 
 @bot.command(name='search', help='Cari lagu terus pilih')
 async def search(ctx, *, content):
@@ -147,7 +159,6 @@ async def search(ctx, *, content):
     voice_client = ctx.message.guild.voice_client
 
     if voice_client.is_playing():
-        #(voice_client.is_playing())
         url = 'www.youtube.com/watch?v='+selected['video_id']
         filename = await YTDLSource.from_url(url, loop=bot.loop)
         qData = {
@@ -157,18 +168,17 @@ async def search(ctx, *, content):
         song_queue.append(qData)
         await ctx.send('**Added to queue:** {}'.format(selected['title'])) 
     else:
-        #print(voice_client.is_playing())
         server = ctx.message.guild
         vc = server.voice_client
         async with ctx.typing():
             url = 'www.youtube.com/watch?v='+selected['video_id']
             filename = await YTDLSource.from_url(url, loop=bot.loop)
             nowp = selected['title']
-            vc.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename), after=tes)
+            vc.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename), after=next_song)
         await ctx.send('**Now playing:** {}'.format(selected['title'])) 
 
 @bot.command(name='play', help='Muter lagu')
-async def play(ctx,url):
+async def play(ctx,*,content):
 
     global vc, nowp, song_queue
 
@@ -184,35 +194,30 @@ async def play(ctx,url):
 
     voice_client = ctx.message.guild.voice_client
 
+    request = youtube.search().list(q=content,part='snippet',type='video',maxResults=1)
+    res = request.execute()
+    data = {
+        'title': html.unescape(res['items'][0]['snippet']['title']),
+        'video_id': res['items'][0]['id']['videoId']
+    }
+    url = 'www.youtube.com/watch?v='+data['video_id']
+
     if voice_client.is_playing():
-        #print(voice_client.is_playing())
         filename = await YTDLSource.from_url(url, loop=bot.loop)
         qData = {
-            'title': filename,
+            'title': data['title'],
             'filename': filename
         }
         song_queue.append(qData)
-        await ctx.send('**Added to queue:** {}'.format(filename)) 
+        await ctx.send('**Added to queue:** {}'.format(data['title'])) 
     else:
-        #print(voice_client.is_playing())
         server = ctx.message.guild
         vc = server.voice_client
         async with ctx.typing():
             filename = await YTDLSource.from_url(url, loop=bot.loop)
-            nowp = filename
-            vc.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename), after=tes)
-        await ctx.send('**Now playing:** {}'.format(filename)) 
-
-    # try:
-    #     server = ctx.message.guild
-    #     voice_channel = server.voice_client
-
-    #     async with ctx.typing():
-    #         filename = await YTDLSource.from_url(url, loop=bot.loop)
-    #         voice_channel.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename))
-    #     await ctx.send('**Now playing:** {}'.format(filename))
-    # except:
-    #     await ctx.send("Bot is not connected to a voice channel")
+            nowp = data['title']
+            vc.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename), after=next_song)
+        await ctx.send('**Now playing:** {}'.format(data['title'])) 
 
 @bot.command(name='pause', help='Berhenti sementara')
 async def pause(ctx):
@@ -239,14 +244,19 @@ async def resume(ctx):
 @bot.command(name='skip', help='Lanjut lagu selanjutnya')
 async def skip(ctx):
     global song_queue, vc, nowp
+    vc.stop()
     if len(song_queue) > 0:
-        vc.stop()
-        src = song_queue.pop(0)
+        time.sleep(3)
+        src = song_queue[0]
         nowp = src['title']
-        vc.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=src['filename']), after=tes)
+        vc.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=src['filename']), after=next_song)
         await ctx.send('**Now playing:** {}'.format(src['title'])) 
-    else:
-        await ctx.send('Queue empty.')
+
+@bot.command(name='remove', help='Hapus dari daftar urutan, gunakan command !q / !queue untuk melihat urutan')
+async def remove(ctx, index):
+    global song_queue
+    removed = song_queue.pop(index-1)
+    await ctx.send(removed['title'] + ' removed from queue')
 
 @bot.command(name='stop', help='Menghentikan lagu')
 async def stop(ctx):
