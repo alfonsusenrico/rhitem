@@ -89,6 +89,8 @@ def next_song(e):
 @bot.slash_command(name='join', help='Supaya bot join ke voice channel')
 async def join(ctx):
 
+    await ctx.respond("Bot attempting to join voice channel.")
+
     if not ctx.author.voice:
         await ctx.respond("{} is not connected to a voice channel ❌.".format(ctx.author.name))
         return
@@ -101,16 +103,22 @@ async def join(ctx):
 # @bot.command(name='leave', help='Supaya bot keluar dari voice channel')
 @bot.slash_command(name='leave', help='Supaya bot keluar dari voice channel')
 async def leave(ctx):
+
+    await ctx.respond("Bot attempting to leave.")
+
     voice_client = ctx.guild.voice_client
     if voice_client.is_connected():
         await voice_client.disconnect()
     else:
-        await ctx.send("Bot is not connected to a voice channel ❌.")
+        await ctx.respond("Bot is not connected to a voice channel ❌.")
 
 # @bot.command(name='np', help='Sekarang lagu apa')
 @bot.slash_command(name='np', help='Sekarang lagu apa')
 async def nowPlaying(ctx):
     global vc, nowp
+
+    await ctx.respond("Queue NowPlaying acquired.")
+
     if vc.is_playing():
         embed = discord.Embed(title="Now Playing:",description=nowp['title'],color=discord.Color(0xA62019))
         embed.set_thumbnail(url=nowp['thumbnail'])
@@ -130,6 +138,8 @@ async def npalt(ctx):
 @bot.slash_command(name='q', help='menampilkan song_queue')
 async def q(ctx):
     global song_queue
+
+    await ctx.respond("Queue command acquired.")
 
     if len(song_queue) > 0:
         msg = ''
@@ -152,6 +162,47 @@ async def q(ctx):
 async def qalt(ctx):
     await q.invoke(ctx)
 
+class SelectButtons(discord.ui.View):
+    @discord.ui.button(label="1", style=discord.ButtonStyle.primary)
+    async def button_callback(self, button, interaction):
+        await interaction.response.send_message(button.label, delete_after=0)
+
+    @discord.ui.button(label="2", style=discord.ButtonStyle.primary)
+    async def button_callback2(self, button, interaction):
+        await interaction.response.send_message(button.label, delete_after=0)
+
+    @discord.ui.button(label="3", style=discord.ButtonStyle.primary)
+    async def button_callback3(self, button, interaction):
+        await interaction.response.send_message(button.label, delete_after=0)
+
+    @discord.ui.button(label="4",style=discord.ButtonStyle.primary)
+    async def button_callback4(self, button, interaction):
+        await interaction.response.send_message(button.label, delete_after=0)
+    
+    @discord.ui.button(label="5", style=discord.ButtonStyle.primary)
+    async def button_callback5(self, button, interaction):
+        await interaction.response.send_message(button.label, delete_after=0)
+
+    @discord.ui.button(label="6", style=discord.ButtonStyle.primary)
+    async def button_callback6(self, button, interaction):
+        await interaction.response.send_message(button.label, delete_after=0)
+
+    @discord.ui.button(label="7", style=discord.ButtonStyle.primary)
+    async def button_callback7(self, button, interaction):
+        await interaction.response.send_message(button.label, delete_after=0)
+
+    @discord.ui.button(label="8",  style=discord.ButtonStyle.primary)
+    async def button_callback8(self, button, interaction):
+        await interaction.response.send_message(button.label, delete_after=0)
+
+    @discord.ui.button(label="9",  style=discord.ButtonStyle.primary)
+    async def button_callback9(self, button, interaction):
+        await interaction.response.send_message(button.label, delete_after=0)
+    
+    @discord.ui.button(label="10", style=discord.ButtonStyle.primary)
+    async def button_callback10(self, button, interaction):
+        await interaction.response.send_message(button.label, delete_after=0)
+
 # @bot.command(name='search', help='Cari lagu terus pilih')
 @bot.slash_command(name='search', help='Cari lagu terus pilih')
 async def search(ctx, *, content):
@@ -173,10 +224,12 @@ async def search(ctx, *, content):
         msg += str(co) + '. ' + qData['title'] + '\n\n'
         co += 1
     embed = discord.Embed(title="Showing 10 queries for '`"+content+"`' based on Youtube:", description=msg, color=discord.Color(0xA62019))
-    choice = await ctx.send(embed=embed)
-    msg = await bot.wait_for('message', check=lambda message: message.author == ctx.author)
-
-    await choice.delete()
+    choice = await ctx.respond(embed=embed, view=SelectButtons())
+    # msg = await bot.wait_for('message', check=lambda message: message.author == ctx.author)
+    msg = await bot.wait_for('message')
+    
+    print("msg: {}".format(msg.content))
+    await choice.delete_original_response()
 
     if msg.content == 'cancel' or msg.content == 'Cancel':
         return
@@ -234,7 +287,7 @@ async def play(ctx,*,content):
     global vc, nowp, song_queue
 
     if not ctx.author.voice:
-        await ctx.send("{} is not connected to a voice channel ❌.".format(ctx.author.name))
+        await ctx.respond("{} is not connected to a voice channel ❌.".format(ctx.author.name))
         return
     else:
         voice_client = ctx.guild.voice_client
@@ -254,6 +307,8 @@ async def play(ctx,*,content):
         'thumbnail': res['items'][0]['snippet']['thumbnails']['default']['url']
     }
     url = 'www.youtube.com/watch?v='+data['video_id']
+
+    await ctx.respond("Search acquired: {}".format(data['title']))
 
     if voice_client.is_playing():
         filename = await YTDLSource.from_url(url, loop=bot.loop)
@@ -288,8 +343,10 @@ async def play(ctx,*,content):
 @bot.slash_command(name='pause', help='Berhenti sementara')
 async def pause(ctx):
     global vc
+
     if vc.is_playing():
         vc.pause()
+        await ctx.respond("Bot paused.")
     else:
         if vc.is_paused():
             await ctx.respond("Bot was paused.")
@@ -302,6 +359,7 @@ async def resume(ctx):
     global vc
     if vc.is_paused():
         vc.resume()
+        await ctx.respond("Bot resumed.")
     else:
         if vc.is_playing():
             await ctx.respond("Bot is already playing.")
@@ -312,7 +370,9 @@ async def resume(ctx):
 @bot.slash_command(name='skip', help='Lanjut lagu selanjutnya')
 async def skip(ctx):
     global song_queue, vc, nowp, loops
+    await ctx.respond("_Skipped!_")
     vc.stop()
+
     if loops == True:
         next_song
     else:
@@ -325,12 +385,14 @@ async def skip(ctx):
             embed.set_footer(text=embed_msg)
             next_song
             await ctx.send(embed=embed)
-    await ctx.respond("_Skipped!_")
+    
 
 # @bot.command(name='remove', help='Hapus dari daftar urutan, gunakan command !q / !queue untuk melihat urutan')
 @bot.slash_command(name='remove', help='Hapus dari daftar urutan, gunakan command !q / !queue untuk melihat urutan')
 async def remove(ctx, index):
     global song_queue
+
+    await ctx.respond("Remove command acquired.")
     removed = song_queue.pop(index-1)
     await ctx.send(removed['title'] + ' removed from queue.')
 
@@ -340,16 +402,21 @@ async def stop(ctx):
 
     global vc
 
+    await ctx.respond("Stop command acquired.")
+
     if vc.is_playing():
         vc.stop()
         await ctx.send("Bot stopped.")
     else:
-        await ctx.send("Bot is not playing anything at the moment ❌.")
+        await ctx.respond("Bot is not playing anything at the moment ❌.")
 
 # @bot.command(name='clear', help='Clear queue')
 @bot.slash_command(name='clear', help='Clear queue')
 async def clear(ctx):
     global queue
+
+    await ctx.respond("Clear command acquired.")
+
     song_queue.clear()
     await ctx.send("Queue cleared")
 
@@ -359,10 +426,10 @@ async def loop_song(ctx):
     global loops, nowp
     if loops == True:
         loops = False
-        await ctx.send("Song loop turned off")
+        await ctx.respond("Song loop turned off")
     else:
         loops = True
-        await ctx.send("Song loop turned on, "+nowp['title']+" will be looped")
+        await ctx.respond("Song loop turned on, "+nowp['title']+" will be looped")
 
 # @bot.command(name='loopp', help='Turned on playlist loop')
 @bot.slash_command(name='loopp', help='Turned on playlist loop')
@@ -370,10 +437,10 @@ async def loop_playlist(ctx):
     global loopp, nowp
     if loopp == True:
         loopp = False
-        await ctx.send("Playlist Loop turned off")
+        await ctx.respond("Playlist Loop turned off")
     else:
         loopp = True
-        await ctx.send("Playlist Loop turned on")
+        await ctx.respond("Playlist Loop turned on")
 
 if __name__ == "__main__" :
     bot.run(DISCORD_TOKEN)
